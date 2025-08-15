@@ -3,6 +3,7 @@ transformers
 pydub
 torch
 torchvision
+torchaudio
 onnx
 onnxruntime
 optimum
