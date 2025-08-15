@@ -1,0 +1,12 @@
+fastapi
+transformers
+pydub
+torch
+torchvision
+onnx
+onnxruntime
+optimum
+librosa
+uvicorn
+python-multipart
+pydantic
