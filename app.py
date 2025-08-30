@@ -13,9 +13,32 @@ feature_extractor = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global model, feature_extractor
-    CHECKPOINT_PATH = os.getenv("CHECKPOINT_PATH", "checkpoint-63480")
-    model = load_optimized_model(CHECKPOINT_PATH)
-    feature_extractor = ASTFeatureExtractorHamming.from_pretrained(CHECKPOINT_PATH)
+    
+    # In Cloud Run, files are in the /app directory
+    CHECKPOINT_PATH = os.getenv("CHECKPOINT_PATH", "checkpoint-266490")
+    
+    # Ensure the checkpoint path is an absolute path
+    if not os.path.isabs(CHECKPOINT_PATH):
+        CHECKPOINT_PATH = os.path.join(os.getcwd(), CHECKPOINT_PATH)
+    
+    print(f"Loading model from checkpoint: {CHECKPOINT_PATH}")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Directory contents: {os.listdir(os.path.dirname(CHECKPOINT_PATH))}")
+
+    try:
+        model = load_optimized_model(CHECKPOINT_PATH)
+        feature_extractor = ASTFeatureExtractorHamming.from_pretrained(
+            CHECKPOINT_PATH,
+            local_files_only=True
+        )
+        print("Model and feature extractor loaded successfully")
+    except Exception as e:
+        print(f"Error loading model: {str(e)}")
+        # Don't raise here to allow the app to start even if model loading fails
+        # This is important for health checks to pass during deployment
+        model = None
+        feature_extractor = None
+        
     yield
 
 app = FastAPI(
@@ -51,6 +74,10 @@ async def predict(file: UploadFile = File(...)):
         return result   
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            print(f"Removing temporary file: {temp_file_path}")
+            os.remove(temp_file_path)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

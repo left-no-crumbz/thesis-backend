@@ -57,15 +57,37 @@ def load_optimized_model(checkpoint_path: str):
     session_options = get_session_options()
     providers = get_providers()
     
-    model = ORTModelForAudioClassification.from_pretrained(
-        checkpoint_path,
-        export=False,
-        provider=providers[0][0] if providers else "CPUExecutionProvider",
-        provider_options=dict(providers[0][1]) if providers else None,
-        session_options=session_options,
-    )
+    print(f"[DEBUG] Attempting to load model from: {checkpoint_path}")
     
-    return model
+    # Check if path exists and is a directory
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Model directory not found at {checkpoint_path}")
+    
+    if not os.path.isdir(checkpoint_path):
+        checkpoint_path = os.path.dirname(checkpoint_path)
+    
+    print(f"[DEBUG] Model directory contents: {os.listdir(checkpoint_path)}")
+
+    # Ensure ONNX file exists to avoid falling back to Hub logic
+    onnx_path = os.path.join(checkpoint_path, "model.onnx")
+    if not os.path.exists(onnx_path):
+        raise FileNotFoundError(
+            f"Expected ONNX file not found at {onnx_path}. Ensure the directory with model.onnx is packaged into the image."
+        )
+    
+    try:
+        model = ORTModelForAudioClassification.from_pretrained(
+            checkpoint_path,
+            local_files_only=True,
+            provider=providers[0][0] if providers else "CPUExecutionProvider",
+            provider_options=dict(providers[0][1]) if providers else None,
+            session_options=session_options,
+        )
+        print("[DEBUG] Model loaded successfully")
+        return model
+    except Exception as e:
+        print(f"[ERROR] Failed to load model: {str(e)}")
+        raise
 
 @time_execution('audio_loading')
 def load_audio_torchaudio(file_path: str, target_sr: int) -> np.ndarray:
@@ -125,22 +147,3 @@ def predict_audio(file_path: str, model: ORTModelForAudioClassification, feature
         "probabilities": {model.config.id2label[i]: prob.item() for i, prob in enumerate(probabilities[0])},
         "timing": timing
     }
-
-if __name__ == "__main__":
-    CHECKPOINT_PATH = "checkpoint-63480"
-    
-    model = load_optimized_model(CHECKPOINT_PATH)
-    feature_extractor = ASTFeatureExtractorHamming.from_pretrained(CHECKPOINT_PATH)
-
-    AUDIO_FILE_PATH = "file9273.mp3.wav_16k.wav_norm.wav_mono.wav_silence.wav_2sec.wav"
-    result = predict_audio(AUDIO_FILE_PATH, model, feature_extractor)
-
-    print(f"Prediction: {result['label']}")
-    print(f"Confidence: {result['confidence']:.4f}")
-    print("\nProbabilities:")
-    for label, prob in result["probabilities"].items():
-        print(f"  P({label}): {prob:.4f}")
-    
-    print("\nTiming Information (seconds):")
-    for name, time_taken in result["timing"].items():
-        print(f"  - {name}: {time_taken:.4f}")
